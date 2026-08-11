@@ -1678,13 +1678,42 @@
   .mt-16 { margin-top: 16px; }
   .mb-16 { margin-bottom: 16px; }
   .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+  /* Autosave indicator */
+  #autoSaveBadge {
+    position: fixed; bottom: 14px; right: 16px; z-index: 999;
+    background: rgba(255,255,255,.94); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 14px; font-size: 12px;
+    color: var(--muted); box-shadow: 0 2px 10px rgba(0,0,0,.08);
+    opacity: 0; transition: opacity .35s ease; pointer-events: none;
+    max-width: 78vw;
+  }
+  @media (max-width: 600px) {
+    #autoSaveBadge { bottom: 8px; right: 8px; font-size: 11px; padding: 5px 10px; }
+  }
+
+  /* Daily rotation progress line under Fresh Today cards */
+  .rotation-note {
+    font-size: 11px; color: var(--muted); margin-top: 8px;
+    padding-top: 6px; border-top: 1px dashed var(--border);
+  }
+
+  /* News deep-read card */
+  .news-read-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .news-read-item:last-child { border-bottom: none; }
+  .news-read-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; line-height: 1.45; }
+  .news-read-body { font-size: 14px; line-height: 1.75; color: var(--text); }
+  .news-read-meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
 </style>
 </head>
 <body>
 
+<!-- Autosave indicator (localStorage works now that we're on a real origin) -->
+<div id="autoSaveBadge"></div>
+
 <aside>
   <div class="brand">Business English</div>
-  <div class="brand-sub">Lyra's Journey · SPA v4</div>
+  <div class="brand-sub">Lyra's Journey · SPA v5.1</div>
   <nav>
     <a href="#home" onclick="event.preventDefault();showSection('home')" class="active" style="font-weight:700;">🏠 Home 首页</a>
     <div class="nav-section">Core Learning</div>
@@ -2696,7 +2725,8 @@
 
 <footer>
   Built for Lyra · Kaiyan Medical · 商务英语学习工作台<br>
-  <span style="color:var(--primary);font-weight:700;">Version 5.0 · Live Content Edition</span> · 更新于 2026-08-11 · 每天 15-20 分钟，一年 100 小时纯练习
+  <span style="color:var(--primary);font-weight:700;">Version 5.1 · Fresh Daily Edition</span> · 更新于 2026-08-11 · 每天 15-20 分钟，一年 100 小时纯练习<br>
+  <span style="font-size:11px;">内容每日不重复轮换 · 进度自动保存到本机浏览器</span>
 </footer>
 
 </main>
@@ -4803,11 +4833,177 @@
   }
 
   /* ========== Level Progress State ========== */
+  /* ========== Persistence ==========
+     Now that the app is served from a real origin instead of file://, localStorage
+     works. Everything is wrapped because private-browsing modes throw on access
+     rather than just failing, and quota errors surface on write. */
+  const STORE_KEY = 'lyraBE_v5';
+  let storeCache = null;
+
+  const HAS_STORE = (() => {
+    try {
+      localStorage.setItem('__probe', '1');
+      localStorage.removeItem('__probe');
+      return true;
+    } catch (e) { return false; }
+  })();
+
+  function loadStore() {
+    if (storeCache) return storeCache;
+    if (!HAS_STORE) return (storeCache = {});
+    try { storeCache = JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+    catch (e) { storeCache = {}; }
+    return storeCache;
+  }
+
+  function storeGet(key, fallback) {
+    const v = loadStore()[key];
+    return v === undefined ? fallback : v;
+  }
+
+  function storeSet(key, value) {
+    loadStore()[key] = value;
+    flushStore();
+  }
+
+  function flushStore() {
+    if (!HAS_STORE) return;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(loadStore())); }
+    catch (e) { /* quota exceeded — keep running from memory */ }
+  }
+
+  /* Snapshot-based autosave: rather than threading a save() call through every
+     mutation site, serialize the whole state periodically and write only when it
+     actually changed. */
+  let lastSnapshot = '';
+
+  function collectState() {
+    return {
+      progress: progress,
+      srsDeck: srsDeck,
+      notebook: getAllNotebookContent()
+    };
+  }
+
+  function saveAll() {
+    if (!HAS_STORE) return;
+    let snap;
+    try { snap = JSON.stringify(collectState()); } catch (e) { return; }
+    if (snap === lastSnapshot) return;
+    lastSnapshot = snap;
+    const s = loadStore();
+    const parsed = JSON.parse(snap);
+    s.progress = parsed.progress;
+    s.srsDeck = parsed.srsDeck;
+    s.notebook = parsed.notebook;
+    s.savedAt = new Date().toISOString();
+    flushStore();
+    showAutoSaveBadge();
+  }
+
+  function restoreAll() {
+    const s = loadStore();
+    if (s.notebook) {
+      Object.keys(s.notebook).forEach(k => {
+        const el = document.getElementById('notes-' + k);
+        if (el && !el.value) el.value = s.notebook[k];
+      });
+    }
+    // Seed the snapshot so a fresh load doesn't immediately rewrite identical data
+    try { lastSnapshot = JSON.stringify(collectState()); } catch (e) {}
+  }
+
+  let autoSaveBadgeTimer = null;
+  function showAutoSaveBadge() {
+    const el = document.getElementById('autoSaveBadge');
+    if (!el) return;
+    el.textContent = '💾 已自动保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    el.style.opacity = '1';
+    clearTimeout(autoSaveBadgeTimer);
+    autoSaveBadgeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+  }
+
+  /* ========== No-repeat daily rotation ==========
+     The old version was pool[dayOfYear % pool.length], which meant the same date
+     always produced the same item every year, and the order never varied. This
+     counts days from a fixed epoch (so no annual wraparound) and walks a shuffled
+     running order that is reseeded each time the pool is exhausted — nothing
+     repeats until every item has been shown, then the next lap comes in a
+     different order. Pure function of the date, so it needs no storage. */
+  const ROTATION_EPOCH = Date.UTC(2020, 0, 1);
+
+  function dayNumber() {
+    const d = new Date();
+    return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - ROTATION_EPOCH) / 86400000);
+  }
+
+  function seededOrder(n, seed) {
+    const arr = Array.from({ length: n }, (_, i) => i);
+    let s = (seed >>> 0) || 1;
+    const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  function lapSeed(n, cycle) {
+    return Math.imul(cycle + 1, 2654435761) ^ Math.imul(n, 40503);
+  }
+
+  /* Each lap shows every item exactly once. Laps are independently shuffled, which
+     on its own can repeat an item across a lap boundary (tail of one lap, head of
+     the next), so nudge any early collision toward the middle of the new lap. */
+  function lapOrder(n, cycle) {
+    const order = seededOrder(n, lapSeed(n, cycle));
+    if (n > 6 && cycle > 0) {
+      const prev = seededOrder(n, lapSeed(n, cycle - 1));
+      const tail = [prev[n - 1], prev[n - 2]];
+      // Keep the first two slots clear of the previous lap's last two items, so the
+      // minimum spacing between any two showings of the same item stays at 3 days.
+      // The swap target must itself be outside that tail, or we just move the
+      // collision instead of removing it.
+      for (let i = 0; i < 2; i++) {
+        if (tail.indexOf(order[i]) === -1) continue;
+        for (let j = Math.floor(n / 2); j < n; j++) {
+          if (tail.indexOf(order[j]) === -1) {
+            const t = order[i]; order[i] = order[j]; order[j] = t;
+            break;
+          }
+        }
+      }
+    }
+    return order;
+  }
+
+  function rotationInfo(pool) {
+    const n = pool.length;
+    const day = dayNumber();
+    const cycle = Math.floor(day / n);
+    const offset = ((day % n) + n) % n;
+    return { index: lapOrder(n, cycle)[offset], dayInCycle: offset + 1, cycleLength: n, cycle: cycle };
+  }
+
+  function pickDailyByDate(pool) {
+    if (!pool || !pool.length) return null;
+    return pool[rotationInfo(pool).index];
+  }
+
   let progress = {
     completed: [],
     xp: 0,
     notes: {} // { levelId: 'note text' }
   };
+
+  (() => {
+    const saved = storeGet('progress', null);
+    if (saved && typeof saved === 'object') {
+      progress.completed = Array.isArray(saved.completed) ? saved.completed : [];
+      progress.xp = typeof saved.xp === 'number' ? saved.xp : 0;
+      progress.notes = (saved.notes && typeof saved.notes === 'object') ? saved.notes : {};
+    }
+  })();
 
   function renderLevels() {
     const grid = document.getElementById('levelGrid');
@@ -5369,25 +5565,21 @@
   }
 
   async function fetchQuote() {
-    // Try Quotable.io first (has CORS)
+    /* api.quotable.io was retired and zenquotes.io sends no CORS header, so both of
+       the previous sources always failed and this card had silently been serving the
+       same 15 local quotes on a 15-day loop. DummyJSON has ~1450 quotes and does send
+       Access-Control-Allow-Origin. */
     try {
-      const resp = await fetch('https://api.quotable.io/random?minLength=60&maxLength=180');
+      const resp = await fetch('https://dummyjson.com/quotes/random', { signal: AbortSignal.timeout(9000) });
       if (resp.ok) {
         const data = await resp.json();
-        return { text: data.content, author: data.author, source: 'Quotable.io' };
+        if (data && data.quote) {
+          return { text: data.quote, author: data.author || 'Unknown', source: 'DummyJSON · live' };
+        }
       }
     } catch (err) {}
-    // Try ZenQuotes as backup
-    try {
-      const resp = await fetch('https://zenquotes.io/api/random');
-      if (resp.ok) {
-        const arr = await resp.json();
-        if (arr[0]) return { text: arr[0].q, author: arr[0].a, source: 'ZenQuotes' };
-      }
-    } catch (err) {}
-    // Fallback: pick from local pool by day-of-year
-    const dayOfYear = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-    const q = quoteFallback[dayOfYear % quoteFallback.length];
+    // Offline fallback, now on the no-repeat rotation instead of dayOfYear % 15
+    const q = pickDailyByDate(quoteFallback);
     return { ...q, source: 'Curated (offline)' };
   }
 
@@ -5516,7 +5708,81 @@
     { w:"succinct", pos:"adj.", ph:"/səkˈsɪŋkt/", en:"briefly and clearly expressed", zh:"简洁的", ex:"Great executives give succinct answers under pressure.", et:"From Latin 'succingere' — to gird up." },
     { w:"reiterate", pos:"v.", ph:"/riˈɪtəreɪt/", en:"to say something again for emphasis", zh:"重申", ex:"Let me reiterate our commitment to sustainability.", et:"From Latin 'reiterare' — to repeat." },
     { w:"discretion", pos:"n.", ph:"/dɪˈskreʃn/", en:"the ability to decide responsibly; freedom to decide", zh:"斟酌决定;审慎", ex:"Bonuses are awarded at the CEO's discretion.", et:"From Latin 'discretio' — separation." },
-    { w:"ambivalent", pos:"adj.", ph:"/æmˈbɪvələnt/", en:"having mixed feelings about something", zh:"矛盾的;两种情感的", ex:"I'm ambivalent about the merger — potential upside, real risks.", et:"From Latin 'ambi-' both + 'valentia' strength." }
+    { w:"ambivalent", pos:"adj.", ph:"/æmˈbɪvələnt/", en:"having mixed feelings about something", zh:"矛盾的;两种情感的", ex:"I'm ambivalent about the merger — potential upside, real risks.", et:"From Latin 'ambi-' both + 'valentia' strength." },
+
+    /* ===== Domain vocabulary added for Kaiyan Medical's actual work: regulatory
+       affairs, clinical language, contracts, logistics, meetings, finance. The
+       original 60 entries were general-academic and covered none of this. ===== */
+
+    // -- Regulatory / quality / clinical
+    { w:"compliance", pos:"n.", ph:"/kəmˈplaɪəns/", en:"the act of meeting a rule, standard, or law", zh:"合规;遵从", ex:"Compliance with ISO 13485 is non-negotiable for medical device exporters.", et:"From Latin 'complere' — to fill up, complete." },
+    { w:"audit", pos:"n./v.", ph:"/ˈɔːdɪt/", en:"an official inspection of records or processes", zh:"审计;稽核", ex:"Our factory passed the client's quality audit without a single major finding.", et:"From Latin 'audire' — to hear; accounts were once read aloud." },
+    { w:"traceability", pos:"n.", ph:"/ˌtreɪsəˈbɪləti/", en:"the ability to track a product's history and origin", zh:"可追溯性", ex:"Full lot traceability lets us pinpoint every unit affected by a defect.", et:"From Old French 'trace' — a track or mark left behind." },
+    { w:"calibration", pos:"n.", ph:"/ˌkælɪˈbreɪʃn/", en:"the process of adjusting an instrument to a known standard", zh:"校准", ex:"Each device ships with a calibration certificate valid for twelve months.", et:"From Arabic 'qalib' — a mould, via French 'calibre'." },
+    { w:"sterile", pos:"adj.", ph:"/ˈsteraɪl/", en:"completely free from living microorganisms", zh:"无菌的", ex:"The packaging must keep the instrument sterile for three years.", et:"From Latin 'sterilis' — barren, unfruitful." },
+    { w:"specification", pos:"n.", ph:"/ˌspesɪfɪˈkeɪʃn/", en:"a detailed description of required design or performance", zh:"规格;技术要求", ex:"Any change to the specification requires written approval from both sides.", et:"From Latin 'specificare' — to describe in detail." },
+    { w:"tolerance", pos:"n.", ph:"/ˈtɒlərəns/", en:"the permitted variation from a specified dimension", zh:"公差;容许偏差", ex:"The dimensional tolerance is plus or minus 0.05 millimetres.", et:"From Latin 'tolerare' — to endure, bear." },
+    { w:"defect", pos:"n.", ph:"/ˈdiːfekt/", en:"a fault that stops something meeting requirements", zh:"缺陷", ex:"We classify every defect as critical, major, or minor before deciding on action.", et:"From Latin 'deficere' — to fail, desert." },
+    { w:"recall", pos:"n./v.", ph:"/ˈriːkɔːl/", en:"withdrawal of a product from the market for safety reasons", zh:"召回", ex:"A voluntary recall almost always costs less than a regulator-forced one.", et:"From Latin 're-' back + 'calare' to call." },
+    { w:"adverse", pos:"adj.", ph:"/ˈædvɜːs/", en:"harmful or unfavourable", zh:"不良的;负面的", ex:"All adverse events must be reported to the authority within fifteen days.", et:"From Latin 'adversus' — turned against." },
+    { w:"efficacy", pos:"n.", ph:"/ˈefɪkəsi/", en:"the ability to produce the intended result", zh:"疗效;有效性", ex:"The trial demonstrated both safety and efficacy in elderly patients.", et:"From Latin 'efficax' — effective, powerful." },
+    { w:"contraindication", pos:"n.", ph:"/ˌkɒntrəˌɪndɪˈkeɪʃn/", en:"a condition that makes a treatment inadvisable", zh:"禁忌症", ex:"Pregnancy is listed as a contraindication in section four of the manual.", et:"Latin 'contra' against + 'indicare' to point out." },
+    { w:"surveillance", pos:"n.", ph:"/səˈveɪləns/", en:"continuous close observation or monitoring", zh:"监测", ex:"Post-market surveillance tells us how the device performs in real hospitals.", et:"From French 'surveiller' — to watch over." },
+    { w:"biocompatible", pos:"adj.", ph:"/ˌbaɪəʊkəmˈpætəbl/", en:"not harmful to living tissue", zh:"生物相容的", ex:"Only biocompatible materials may contact the patient's skin.", et:"Greek 'bios' life + Latin 'compati' to suffer with." },
+    { w:"batch", pos:"n.", ph:"/bætʃ/", en:"a quantity produced or processed together as one unit", zh:"批次", ex:"We quarantined the entire batch pending the sterility test results.", et:"From Old English 'bacan' — to bake; originally one baking's worth of bread." },
+
+    // -- Contracts / negotiation
+    { w:"stipulate", pos:"v.", ph:"/ˈstɪpjuleɪt/", en:"to state a requirement explicitly in an agreement", zh:"明确规定", ex:"The contract stipulates delivery within sixty days of the deposit.", et:"From Latin 'stipulari' — to bargain, demand a formal promise." },
+    { w:"indemnify", pos:"v.", ph:"/ɪnˈdemnɪfaɪ/", en:"to compensate for loss, or to protect against liability", zh:"赔偿;使免责", ex:"The supplier agrees to indemnify us against third-party patent claims.", et:"From Latin 'indemnis' — unhurt, free from loss." },
+    { w:"arbitration", pos:"n.", ph:"/ˌɑːbɪˈtreɪʃn/", en:"settling a dispute through a neutral third party instead of a court", zh:"仲裁", ex:"Disputes go to arbitration in Singapore, not to the local courts.", et:"From Latin 'arbitrari' — to judge, give an opinion." },
+    { w:"breach", pos:"n./v.", ph:"/briːtʃ/", en:"a failure to keep the terms of an agreement", zh:"违约;违反", ex:"Late delivery beyond thirty days constitutes a breach of contract.", et:"From Old English 'brecan' — to break." },
+    { w:"waive", pos:"v.", ph:"/weɪv/", en:"to voluntarily give up a right or claim", zh:"放弃(权利);豁免", ex:"They agreed to waive the late-payment penalty this once as a goodwill gesture.", et:"From Anglo-French 'weyver' — to abandon." },
+    { w:"binding", pos:"adj.", ph:"/ˈbaɪndɪŋ/", en:"creating a legal obligation that must be honoured", zh:"有约束力的", ex:"This term sheet is not binding until both parties sign the definitive agreement.", et:"From Old English 'bindan' — to tie." },
+    { w:"clause", pos:"n.", ph:"/klɔːz/", en:"a distinct section of a contract or legal document", zh:"条款", ex:"Read the termination clause carefully before you sign anything.", et:"From Latin 'claudere' — to close, conclude." },
+    { w:"concession", pos:"n.", ph:"/kənˈseʃn/", en:"something given up in order to reach agreement", zh:"让步", ex:"We made one concession on payment terms and held firm on unit price.", et:"From Latin 'concedere' — to yield, give way." },
+    { w:"leeway", pos:"n.", ph:"/ˈliːweɪ/", en:"freedom or room to act or deviate", zh:"余地;宽限", ex:"Give me some leeway on the deadline and I'll hold the current price.", et:"Nautical — a ship's sideways drift away from its intended course." },
+    { w:"contingent", pos:"adj.", ph:"/kənˈtɪndʒənt/", en:"depending on something else happening first", zh:"视…而定的;以…为条件的", ex:"The volume rebate is contingent on hitting the Q4 target.", et:"From Latin 'contingere' — to touch, to befall." },
+    { w:"forfeit", pos:"v./n.", ph:"/ˈfɔːfɪt/", en:"to lose something as a penalty for a fault or breach", zh:"丧失;罚没", ex:"Cancel after production has started and you forfeit the deposit.", et:"From Old French 'forfaire' — to transgress, do wrong." },
+    { w:"escalate", pos:"v.", ph:"/ˈeskəleɪt/", en:"to refer a matter to a higher level of authority", zh:"升级;上报", ex:"If the buyer still refuses, we escalate to the regional director.", et:"Back-formation from 'escalator', itself from Latin 'scala' — ladder." },
+    { w:"reconcile", pos:"v.", ph:"/ˈrekənsaɪl/", en:"to make two sets of figures or accounts agree", zh:"核对;调和", ex:"We need to reconcile their invoice against our original purchase order.", et:"From Latin 'reconciliare' — to bring together again." },
+    { w:"remit", pos:"v.", ph:"/rɪˈmɪt/", en:"to send money in payment", zh:"汇款", ex:"Please remit the outstanding balance within seven working days.", et:"From Latin 'remittere' — to send back." },
+    { w:"procurement", pos:"n.", ph:"/prəˈkjʊəmənt/", en:"the process of officially buying goods or services", zh:"采购", ex:"Hospital procurement committees often meet only once a quarter.", et:"From Latin 'procurare' — to take care of, manage." },
+
+    // -- Logistics / international trade
+    { w:"consignment", pos:"n.", ph:"/kənˈsaɪnmənt/", en:"a batch of goods sent for delivery or sale", zh:"一批货;寄售", ex:"The consignment cleared customs in Rotterdam this morning.", et:"From Latin 'consignare' — to mark with a seal." },
+    { w:"expedite", pos:"v.", ph:"/ˈekspədaɪt/", en:"to make a process happen faster", zh:"加快;加急处理", ex:"Can you expedite the shipment? The trade fair opens in two weeks.", et:"From Latin 'expedire' — to free the feet, set free." },
+    { w:"incur", pos:"v.", ph:"/ɪnˈkɜː/", en:"to become subject to a cost or liability", zh:"招致;承担(费用)", ex:"Switching to air freight will incur an extra two thousand dollars.", et:"From Latin 'incurrere' — to run into." },
+    { w:"surcharge", pos:"n.", ph:"/ˈsɜːtʃɑːdʒ/", en:"an additional charge added to the usual price", zh:"附加费", ex:"The carrier added a peak-season surcharge without prior notice.", et:"From French 'sur' over + 'charger' to load." },
+    { w:"logistics", pos:"n.", ph:"/ləˈdʒɪstɪks/", en:"the detailed coordination of moving goods and resources", zh:"物流;后勤", ex:"Logistics, not manufacturing, is our real bottleneck this quarter.", et:"From French 'logistique' — the art of quartering troops." },
+    { w:"inventory", pos:"n.", ph:"/ˈɪnvəntri/", en:"the stock of goods a business is holding", zh:"库存", ex:"We're carrying too much inventory ahead of the new model launch.", et:"From Latin 'invenire' — to find, come upon." },
+    { w:"tariff", pos:"n.", ph:"/ˈtærɪf/", en:"a tax imposed on imported goods", zh:"关税", ex:"The new tariff wiped out our margin in that market overnight.", et:"From Arabic 'ta'rif' — notification, inventory of fees." },
+    { w:"quota", pos:"n.", ph:"/ˈkwəʊtə/", en:"a fixed share or limited quantity that is allowed", zh:"配额;定额", ex:"Each distributor has an annual quota to keep territory exclusivity.", et:"From Latin 'quota pars' — how great a part." },
+    { w:"bottleneck", pos:"n.", ph:"/ˈbɒtlnek/", en:"the stage in a process that limits overall speed", zh:"瓶颈", ex:"Sterilization capacity is the bottleneck, not final assembly.", et:"The narrow neck of a bottle, which restricts how fast liquid flows out." },
+    { w:"throughput", pos:"n.", ph:"/ˈθruːpʊt/", en:"the amount processed or produced in a given period", zh:"产量;吞吐量", ex:"The new line doubled throughput without adding a single operator.", et:"Compound of 'through' + 'put', modelled on 'output'." },
+
+    // -- Meetings / professional communication
+    { w:"agenda", pos:"n.", ph:"/əˈdʒendə/", en:"the list of items to be discussed at a meeting", zh:"议程", ex:"Circulate the agenda a day before the call so nobody arrives cold.", et:"From Latin 'agenda' — literally 'things which must be done'." },
+    { w:"quorum", pos:"n.", ph:"/ˈkwɔːrəm/", en:"the minimum number of people needed for a valid decision", zh:"法定人数", ex:"We can't put it to a vote without a quorum.", et:"From Latin 'quorum' — 'of whom', the opening word of an old English writ." },
+    { w:"defer", pos:"v.", ph:"/dɪˈfɜː/", en:"to postpone to a later time", zh:"推迟;延后", ex:"Let's defer that decision until the clinical data comes in.", et:"From Latin 'differre' — to carry apart, postpone." },
+    { w:"delegate", pos:"v.", ph:"/ˈdelɪɡeɪt/", en:"to give a task or authority to someone else", zh:"委派;授权", ex:"A manager who can't delegate eventually becomes the bottleneck.", et:"From Latin 'delegare' — to send as a representative." },
+    { w:"clarify", pos:"v.", ph:"/ˈklærəfaɪ/", en:"to make something easier to understand", zh:"澄清;说明", ex:"Let me clarify one point before we move on to pricing.", et:"From Latin 'clarus' clear + 'facere' to make." },
+    { w:"paraphrase", pos:"v.", ph:"/ˈpærəfreɪz/", en:"to restate something in different words", zh:"转述;换句话说", ex:"Let me paraphrase that to check I've understood you correctly.", et:"From Greek 'paraphrasis' — a telling in other words." },
+    { w:"articulate", pos:"v./adj.", ph:"/ɑːˈtɪkjuleɪt/", en:"to express an idea clearly and precisely", zh:"清晰表达", ex:"She can articulate a complex regulatory issue in two sentences.", et:"From Latin 'articulare' — to divide into distinct joints." },
+    { w:"concur", pos:"v.", ph:"/kənˈkɜː/", en:"to agree with an opinion or decision", zh:"同意;赞同", ex:"I concur with the finance team on this one.", et:"From Latin 'concurrere' — to run together." },
+    { w:"abstain", pos:"v.", ph:"/əbˈsteɪn/", en:"to formally decline to vote", zh:"弃权", ex:"Two directors abstained from the vote on the joint venture.", et:"From Latin 'abstinere' — to hold back from." },
+    { w:"reconvene", pos:"v.", ph:"/ˌriːkənˈviːn/", en:"to meet again after a break", zh:"重新开会", ex:"Let's reconvene at two once everyone has read the report.", et:"Latin 're-' again + 'convenire' to come together." },
+
+    // -- Business strategy / finance
+    { w:"margin", pos:"n.", ph:"/ˈmɑːdʒɪn/", en:"the difference between cost and selling price, as profit", zh:"利润率;毛利", ex:"A three percent margin can't absorb a currency swing like that.", et:"From Latin 'margo' — edge, border." },
+    { w:"overhead", pos:"n.", ph:"/ˈəʊvəhed/", en:"ongoing business costs not tied to a specific product", zh:"间接费用;管理费用", ex:"Our overhead stays low because we share the parent company's lab.", et:"From costs recorded 'over head' — above the line in old ledgers." },
+    { w:"amortize", pos:"v.", ph:"/əˈmɔːtaɪz/", en:"to spread a cost over a period of time", zh:"分期摊销", ex:"We amortize the mould cost over the first ten thousand units.", et:"From Latin 'ad mortem' — to death, i.e. extinguishing a debt." },
+    { w:"liquidity", pos:"n.", ph:"/lɪˈkwɪdəti/", en:"how easily assets can be converted into cash", zh:"流动性", ex:"We're profitable on paper but we have a liquidity problem this month.", et:"From Latin 'liquidus' — fluid, flowing." },
+    { w:"attrition", pos:"n.", ph:"/əˈtrɪʃn/", en:"gradual loss of customers, staff, or strength", zh:"流失;损耗", ex:"Distributor attrition tells you more about your product than any survey.", et:"From Latin 'atterere' — to rub against, wear away." },
+    { w:"benchmark", pos:"v./n.", ph:"/ˈbentʃmɑːk/", en:"to compare against a recognised standard", zh:"对标;基准", ex:"We benchmark our pricing against three German competitors every spring.", et:"A surveyor's mark cut into stone, used as a fixed reference point." },
+    { w:"mitigate", pos:"v.", ph:"/ˈmɪtɪɡeɪt/", en:"to make something less severe or risky", zh:"缓解;降低(风险)", ex:"Dual sourcing mitigates the risk of one supplier failing.", et:"From Latin 'mitigare' — to soften, make mild." },
+    { w:"streamline", pos:"v.", ph:"/ˈstriːmlaɪn/", en:"to simplify a process to make it more efficient", zh:"精简;优化流程", ex:"We streamlined approval from five signatures down to two.", et:"From the shape that offers least resistance when moving through a fluid." },
+    { w:"outsource", pos:"v.", ph:"/ˈaʊtsɔːs/", en:"to contract work out to an external company", zh:"外包", ex:"We outsource packaging but keep sterilization in house.", et:"Compound of 'out' + 'source', coined in 1970s manufacturing." },
+    { w:"scalable", pos:"adj.", ph:"/ˈskeɪləbl/", en:"able to grow in size or volume without breaking down", zh:"可扩展的", ex:"The process works for fifty units a month, but it isn't scalable to five thousand.", et:"From Latin 'scala' — ladder, steps." }
   ];
 
   // ===== Idiom of the Day (bundled, rotates by day-of-year) =====
@@ -5560,7 +5826,50 @@
     { i:"Best of both worlds", en:"An ideal situation combining two positive things.", zh:"两全其美", ex:"Working from home two days a week gives me the best of both worlds.", or:"Common English phrase, popularized in 20th-century business writing." },
     { i:"Better safe than sorry", en:"It's wiser to be cautious than regretful later.", zh:"小心驶得万年船", ex:"Let's get legal to review it — better safe than sorry.", or:"English proverb, first recorded in Samuel Lover's 1837 novel 'Rory O'More.'" },
     { i:"By the book", en:"According to the rules; officially.", zh:"照章办事", ex:"Compliance requires we do everything by the book.", or:"From legal profession — following the exact letter of the law book." },
-    { i:"Call it a day", en:"Stop working on something for the day.", zh:"收工;今天就到这里", ex:"We've been at this for 10 hours — let's call it a day.", or:"American workers' expression from the early 1900s." }
+    { i:"Call it a day", en:"Stop working on something for the day.", zh:"收工;今天就到这里", ex:"We've been at this for 10 hours — let's call it a day.", or:"American workers' expression from the early 1900s." },
+
+    /* ===== Second batch, weighted toward phrases that actually surface in
+       negotiations, conference calls, and supplier management. ===== */
+    { i:"Move the needle", en:"Make a noticeable difference to a result.", zh:"产生实质影响", ex:"A 2% discount won't move the needle — they want exclusivity.", or:"From analogue gauges and dials, where a visible needle movement means real change." },
+    { i:"Circle back", en:"Return to a topic or person later.", zh:"稍后再议;回头联系", ex:"Let me check with our regulatory team and circle back tomorrow.", or:"Corporate American usage from the late 20th century, from the image of returning to a starting point." },
+    { i:"Table something", en:"Postpone discussion of an item (US) or bring it up (UK).", zh:"暂缓讨论(美)/提出讨论(英)", ex:"Let's table the pricing discussion until legal has reviewed the draft.", or:"Parliamentary procedure — literally laying a document on the table. Beware: the US and UK meanings are opposite." },
+    { i:"Low-hanging fruit", en:"The easiest opportunities to capture first.", zh:"容易实现的目标", ex:"Existing hospital clients are the low-hanging fruit — start there.", or:"From orchard picking, where the accessible fruit is gathered first." },
+    { i:"Boil the ocean", en:"Attempt something impossibly large in scope.", zh:"好高骛远;不切实际", ex:"We can't boil the ocean — pick three markets and do them properly.", or:"Attributed to Will Rogers, who joked that to defeat submarines you should boil the ocean." },
+    { i:"Drop the ball", en:"Fail to handle a responsibility.", zh:"出岔子;失职", ex:"We dropped the ball on the CE renewal and lost two months.", or:"From ball sports, where a dropped catch loses the play." },
+    { i:"Bring to the table", en:"Offer something of value in a deal.", zh:"能带来什么;提供的价值", ex:"What does their distributor bring to the table besides warehouse space?", or:"From negotiation imagery — what each side literally lays on the bargaining table." },
+    { i:"Raise the bar", en:"Set a higher standard.", zh:"提高标准", ex:"The new EU regulation raised the bar for clinical evidence.", or:"From high jump and pole vault, where the crossbar is physically raised." },
+    { i:"In the pipeline", en:"In progress but not yet complete.", zh:"在推进中", ex:"We have two hospital tenders in the pipeline for next quarter.", or:"From oil and gas pipelines, where product is en route but not yet delivered." },
+    { i:"Corner cases", en:"Rare situations at the edge of normal conditions.", zh:"边缘情况", ex:"The device works fine normally, but the corner cases worry the reviewers.", or:"Engineering term for conditions at the extreme 'corners' of an operating range." },
+    { i:"Due diligence", en:"Careful investigation before committing to a deal.", zh:"尽职调查", ex:"Do your due diligence on that distributor before signing anything exclusive.", or:"Legal term formalised by the US Securities Act of 1933." },
+    { i:"Ballpark it", en:"Give a rough estimate.", zh:"估个大概", ex:"Can you ballpark it for me? Are we talking weeks or months?", or:"American baseball — anywhere inside the ballpark, i.e. roughly right." },
+    { i:"A hard sell", en:"Something difficult to persuade someone to accept.", zh:"难以说服的事", ex:"A price increase during a tender is a hard sell, but the tariff left us no choice.", or:"Sales jargon contrasting aggressive 'hard sell' with gentle 'soft sell'." },
+    { i:"Bandwidth", en:"The capacity or spare time to take something on.", zh:"精力;可投入的时间", ex:"I don't have the bandwidth to run the exhibition and the audit in the same week.", or:"Borrowed from telecommunications, where bandwidth measures data capacity." },
+    { i:"Deal breaker", en:"An issue serious enough to end a negotiation.", zh:"谈判破裂点", ex:"Unlimited liability is a deal breaker for us — everything else is negotiable.", or:"American business usage from the mid-20th century." },
+    { i:"Get buy-in", en:"Obtain agreement and support from stakeholders.", zh:"取得支持;达成共识", ex:"Get buy-in from the clinical team before you promise the customer anything.", or:"From the financial sense of 'buying in' — investing, and so committing." },
+    { i:"Split the difference", en:"Compromise midway between two positions.", zh:"折中;各让一半", ex:"They want 30 days, we want 90 — let's split the difference at 60.", or:"From arithmetic bargaining, dividing the gap between two prices." },
+    { i:"Take it offline", en:"Continue a discussion privately, outside the current meeting.", zh:"会后私下再谈", ex:"That's a detail for the two of us — let's take it offline.", or:"From computing, where 'offline' means disconnected from the shared system." },
+    { i:"Loop someone in", en:"Include someone in a conversation or email chain.", zh:"把某人加进来;告知", ex:"I'll loop in our regulatory lead so she can answer the sterilization question.", or:"From being 'in the loop' — inside the circuit of information." },
+    { i:"Long shot", en:"Something with little chance of success but worth trying.", zh:"希望不大但值得一试", ex:"Winning that tender is a long shot, but the relationship alone justifies bidding.", or:"From naval gunnery and archery, where distant targets were rarely hit." },
+    { i:"Cut our losses", en:"Stop investing in something failing to limit further damage.", zh:"止损", ex:"That market has cost us two years — time to cut our losses.", or:"From trading, where a position is closed to prevent deeper losses." },
+    { i:"Kick the can down the road", en:"Postpone dealing with a problem.", zh:"拖延问题", ex:"Renewing the old certificate just kicks the can down the road.", or:"From a children's street game, and popularised in American political commentary." },
+    { i:"Put out fires", en:"Deal with urgent problems rather than planned work.", zh:"处理突发问题;救火", ex:"I spent the whole week putting out fires and never touched the strategy deck.", or:"Firefighting imagery applied to reactive management." },
+    { i:"Above board", en:"Honest, open, and legitimate.", zh:"光明正大的", ex:"Every payment is above board and documented — we can survive any audit.", or:"Card playing — hands kept above the table (board) can't be tampered with." },
+    { i:"Learning curve", en:"The rate at which someone acquires a new skill.", zh:"学习曲线", ex:"There's a steep learning curve on the new regulation, but it's manageable.", or:"From 1885 psychology experiments by Hermann Ebbinghaus on memory and learning." },
+    { i:"Cover all the bases", en:"Prepare for every possibility.", zh:"考虑周全;万无一失", ex:"Bring the test reports and the clinical data — let's cover all the bases.", or:"American baseball — defending every base against a runner." },
+    { i:"Set in stone", en:"Fixed and unchangeable.", zh:"不可更改的", ex:"The launch date isn't set in stone yet — the audit could shift it.", or:"From ancient inscriptions carved permanently into stone tablets." },
+    { i:"On the back burner", en:"Given low priority for now.", zh:"暂时搁置", ex:"The Latin America plan is on the back burner until the EU filing clears.", or:"Cooking — pots needing less attention are moved to the rear burners." },
+    { i:"A win-win", en:"An outcome that benefits both parties.", zh:"双赢", ex:"Longer payment terms for them, a bigger order for us — a genuine win-win.", or:"From game theory, popularised in 1980s negotiation training." },
+    { i:"Iron out", en:"Resolve small remaining difficulties.", zh:"解决细节问题", ex:"The main terms are agreed; we just need to iron out the warranty wording.", or:"From pressing wrinkles out of cloth with an iron." },
+    { i:"Ramp up", en:"Increase output or effort significantly.", zh:"提升产能;加大投入", ex:"We need to ramp up production before the exhibition season.", or:"From engineering, describing a gradually rising slope on a graph." },
+    { i:"Red tape", en:"Excessive bureaucratic procedure.", zh:"官僚繁文缛节", ex:"Registration in that market is pure red tape — eighteen months of paperwork.", or:"English legal documents were once literally bound with red cloth tape." },
+    { i:"Rubber-stamp", en:"Approve something automatically without real scrutiny.", zh:"例行批准;走形式", ex:"Don't expect them to rubber-stamp it — this committee reads everything.", or:"From self-inking rubber stamps used for routine bureaucratic approval." },
+    { i:"Have skin in the game", en:"Have a personal stake in the outcome.", zh:"有切身利益;共担风险", ex:"Ask them to co-fund the trial — a partner with skin in the game works harder.", or:"Popularised by investor Warren Buffett to mean personal financial exposure." },
+    { i:"A sticking point", en:"The specific issue blocking agreement.", zh:"症结;分歧点", ex:"Price wasn't the problem — the sticking point was exclusivity.", or:"From mechanisms that jam or stick at one particular place." },
+    { i:"Par for the course", en:"Normal and to be expected in the circumstances.", zh:"稀松平常;不意外", ex:"A three-week customs delay in August is par for the course.", or:"Golf — 'par' is the expected number of strokes for a course." },
+    { i:"Go back to square one", en:"Return to the very beginning after a failure.", zh:"回到起点", ex:"The notified body rejected the file, so we're back to square one.", or:"Possibly from early BBC radio football commentary, which divided the pitch into numbered squares." },
+    { i:"Throw someone under the bus", en:"Blame or sacrifice a colleague to protect yourself.", zh:"甩锅;出卖同事", ex:"Own the delay in the meeting — don't throw the factory under the bus.", or:"British political journalism of the 1980s, describing sacrificial blame." },
+    { i:"Bend over backwards", en:"Make an extraordinary effort to accommodate someone.", zh:"竭尽全力配合", ex:"We bent over backwards for that account and they still switched suppliers.", or:"Physical imagery of contorting oneself to an unnatural degree." },
+    { i:"Wear many hats", en:"Perform several different roles.", zh:"身兼多职", ex:"In a company our size everyone wears many hats — I do sales and regulatory.", or:"From the idea that each occupation has its own distinctive headwear." }
   ];
 
   // ===== Classic Literature Passages (bundled) =====
@@ -5584,12 +5893,48 @@
     { p:"For what it's worth: it's never too late to be whoever you want to be.", z:"无论如何，成为你想成为的人，永远都不会太晚。", a:"F. Scott Fitzgerald", w:"attributed quote" },
     { p:"I have not failed. I've just found 10,000 ways that won't work.", z:"我没有失败。我只是找到了 10,000 种行不通的方法。", a:"Thomas Edison", w:"attributed" },
     { p:"In the depth of winter, I finally learned that there was in me an invincible summer.", z:"在深冬里，我终于发现，我内心有一个不可战胜的夏天。", a:"Albert Camus", w:"Return to Tipasa (1952)" },
-    { p:"You cannot swim for new horizons until you have courage to lose sight of the shore.", z:"若无胆量丢开海岸线，你便无法向新的地平线游去。", a:"William Faulkner", w:"attributed" }
+    { p:"You cannot swim for new horizons until you have courage to lose sight of the shore.", z:"若无胆量丢开海岸线，你便无法向新的地平线游去。", a:"William Faulkner", w:"attributed" },
+
+    /* ===== Second batch of passages, each with a Chinese rendering — this is the
+       one card an API genuinely cannot replace, since free quote services provide
+       no translation. ===== */
+    { p:"Call me Ishmael. Some years ago — never mind how long precisely — having little or no money in my purse, I thought I would sail about a little and see the watery part of the world.", z:"叫我以实玛利吧。几年前——具体多久就不必细说了——我囊中羞涩，便想出海走走，看看这世界被水覆盖的那一部分。", a:"Herman Melville", w:"Moby-Dick (1851)" },
+    { p:"It was a bright cold day in April, and the clocks were striking thirteen.", z:"那是四月里一个明亮而寒冷的日子，钟敲了十三下。", a:"George Orwell", w:"Nineteen Eighty-Four (1949)" },
+    { p:"We are all in the gutter, but some of us are looking at the stars.", z:"我们都身处沟渠之中，但总有人仰望星空。", a:"Oscar Wilde", w:"Lady Windermere's Fan (1892)" },
+    { p:"The world breaks everyone, and afterward, many are strong at the broken places.", z:"世界会击垮每一个人，但许多人事后在破碎处反而更坚强。", a:"Ernest Hemingway", w:"A Farewell to Arms (1929)" },
+    { p:"Beware; for I am fearless, and therefore powerful.", z:"当心——我无所畏惧，因此我强大。", a:"Mary Shelley", w:"Frankenstein (1818)" },
+    { p:"I took a deep breath and listened to the old brag of my heart: I am, I am, I am.", z:"我深吸一口气，听见心脏那句古老的自夸：我在，我在，我在。", a:"Sylvia Plath", w:"The Bell Jar (1963)" },
+    { p:"There is nothing either good or bad, but thinking makes it so.", z:"事情本无好坏，是思想使然。", a:"William Shakespeare", w:"Hamlet (1603)" },
+    { p:"Tomorrow is always fresh, with no mistakes in it yet.", z:"明天永远是新的，里面还没有任何错误。", a:"L.M. Montgomery", w:"Anne of Green Gables (1908)" },
+    { p:"The greatest glory in living lies not in never falling, but in rising every time we fall.", z:"生命最大的荣耀不在于从不跌倒，而在于每次跌倒后都能站起来。", a:"attributed to Nelson Mandela", w:"widely quoted" },
+    { p:"I am no bird; and no net ensnares me: I am a free human being with an independent will.", z:"我不是鸟，也没有网能困住我：我是一个有独立意志的自由人。", a:"Charlotte Brontë", w:"Jane Eyre (1847)" },
+    { p:"How wonderful it is that nobody need wait a single moment before starting to improve the world.", z:"多美妙——没有人需要等待哪怕一刻，就可以开始让世界变好。", a:"Anne Frank", w:"The Diary of a Young Girl (1947)" },
+    { p:"It does not do to dwell on dreams and forget to live.", z:"沉溺于梦境而忘记生活，是不行的。", a:"J.K. Rowling", w:"Harry Potter and the Philosopher's Stone (1997)" },
+    { p:"The most difficult thing is the decision to act; the rest is merely tenacity.", z:"最难的是下决心行动，其余的只是坚持而已。", a:"Amelia Earhart", w:"attributed" },
+    { p:"I would rather walk with a friend in the dark, than alone in the light.", z:"我宁愿与朋友走在黑暗里，也不愿独自走在光明中。", a:"Helen Keller", w:"attributed" },
+    { p:"Twenty years from now you will be more disappointed by the things that you didn't do than by the ones you did do.", z:"二十年后，让你更后悔的将是你没做过的事，而不是你做过的事。", a:"attributed to Mark Twain", w:"widely quoted" },
+    { p:"A room without books is like a body without a soul.", z:"没有书的房间，就像没有灵魂的身体。", a:"attributed to Cicero", w:"widely quoted" },
+    { p:"Happiness can be found, even in the darkest of times, if one only remembers to turn on the light.", z:"即使在最黑暗的时刻也能找到幸福——只要你记得把灯打开。", a:"J.K. Rowling", w:"Harry Potter and the Prisoner of Azkaban (1999)" },
+    { p:"And now that you don't have to be perfect, you can be good.", z:"既然你不必完美了，你就可以变好了。", a:"John Steinbeck", w:"East of Eden (1952)" },
+    { p:"There are years that ask questions and years that answer.", z:"有些年份提出问题，有些年份给出答案。", a:"Zora Neale Hurston", w:"Their Eyes Were Watching God (1937)" },
+    { p:"The past is a foreign country; they do things differently there.", z:"过去是一个异国；那里的人做事方式完全不同。", a:"L.P. Hartley", w:"The Go-Between (1953)" },
+    { p:"We accept the love we think we deserve.", z:"我们接受自己认为配得上的那种爱。", a:"Stephen Chbosky", w:"The Perks of Being a Wallflower (1999)" },
+    { p:"You never really understand a person until you consider things from his point of view.", z:"除非你从他的角度看问题，否则你永远无法真正理解一个人。", a:"Harper Lee", w:"To Kill a Mockingbird (1960)" },
+    { p:"Time is the longest distance between two places.", z:"时间是两地之间最长的距离。", a:"Tennessee Williams", w:"The Glass Menagerie (1944)" },
+    { p:"It is our choices that show what we truly are, far more than our abilities.", z:"真正显示我们是什么样的人，是我们的选择，远甚于我们的能力。", a:"J.K. Rowling", w:"Harry Potter and the Chamber of Secrets (1998)" },
+    { p:"The only journey is the one within.", z:"唯一的旅程是向内的旅程。", a:"Rainer Maria Rilke", w:"attributed" },
+    { p:"Everything you can imagine is real.", z:"你能想象的一切都是真实的。", a:"Pablo Picasso", w:"attributed" },
+    { p:"To live is the rarest thing in the world. Most people exist, that is all.", z:"活着是世上最罕见的事。大多数人只是存在着，仅此而已。", a:"Oscar Wilde", w:"attributed" },
+    { p:"Man is not made for defeat. A man can be destroyed but not defeated.", z:"人不是为失败而生的。一个人可以被毁灭，但不能被打败。", a:"Ernest Hemingway", w:"The Old Man and the Sea (1952)" },
+    { p:"If you want to know what a man's like, take a good look at how he treats his inferiors, not his equals.", z:"想知道一个人是什么样的，好好看他如何对待地位比他低的人，而不是与他平等的人。", a:"J.K. Rowling", w:"Harry Potter and the Goblet of Fire (2000)" },
+    { p:"Memory is the diary that we all carry about with us.", z:"记忆是我们每个人随身携带的日记。", a:"Oscar Wilde", w:"The Importance of Being Earnest (1895)" }
   ];
 
-  function pickDailyByDate(pool) {
-    const dayOfYear = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-    return pool[dayOfYear % pool.length];
+  // Shows how far into the current no-repeat lap today is, so the rotation is visible
+  // rather than something you have to take on faith.
+  function rotationNote(pool, label) {
+    const r = rotationInfo(pool);
+    return `<div class="rotation-note">🔁 ${label}：本轮第 ${r.dayInCycle} / ${r.cycleLength} 天 · 走完 ${r.cycleLength} 天才会重复，下一轮顺序还会重新打乱</div>`;
   }
 
   function renderWordOfDay() {
@@ -5603,6 +5948,7 @@
         <div class="wotd-zh">${w.zh}</div>
         <div class="wotd-example">${wrapForTranslate('Example: ' + w.ex)}</div>
         <div class="wotd-etym"><strong>📜 Etymology · 词源：</strong>${w.et}</div>
+        ${rotationNote(wordOfDayPool, '单词库')}
       </div>
     `;
   }
@@ -5617,6 +5963,7 @@
         <div class="idiom-meaning-zh">🇨🇳 ${i.zh}</div>
         <div class="idiom-example">${wrapForTranslate('"' + i.ex + '"')}</div>
         <div class="idiom-origin"><strong>📜 Origin · 出处：</strong>${i.or}</div>
+        ${rotationNote(idiomPool, '习语库')}
       </div>
     `;
   }
@@ -5629,35 +5976,98 @@
         <div class="lit-passage">${wrapForTranslate(l.p)}<button class="speak-btn" onclick="speak(this.dataset.text)" data-text="${l.p.replace(/"/g,'&quot;')}" style="background:white;color:#7c3aed;">🔊</button></div>
         <div class="lit-attribution">— <strong>${l.a}</strong>, <em>${l.w}</em></div>
         <div class="lit-translation">🇨🇳 ${l.z}</div>
+        ${rotationNote(litPassages, '文学库')}
       </div>
     `;
   }
 
-  async function fetchBBCNews() {
-    // rss2json.com free tier (no key required)
-    try {
-      const resp = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('http://feeds.bbci.co.uk/news/world/rss.xml'));
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      if (data.status === 'ok' && data.items) return data.items.slice(0, 5);
-      return null;
-    } catch (err) { return null; }
+  /* Three feeds instead of one, rotated by the same no-repeat engine as the other
+     daily content — so the reading material differs day to day even before the
+     underlying headlines change. All three verified reachable through rss2json's
+     free tier (no key) with CORS. */
+  const NEWS_FEEDS = [
+    { name: 'BBC World',      url: 'http://feeds.bbci.co.uk/news/world/rss.xml',   tag: 'BBC' },
+    { name: 'Guardian World', url: 'https://www.theguardian.com/world/rss',        tag: 'The Guardian' },
+    { name: 'NPR World',      url: 'https://feeds.npr.org/1004/rss.xml',           tag: 'NPR' }
+  ];
+
+  function stripHtml(s) {
+    return (s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  function renderNewsCard(items) {
-    if (!items || !items.length) return '';
+  async function fetchOneFeed(feed) {
+    const resp = await fetch(
+      'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url),
+      { signal: AbortSignal.timeout(12000) }
+    );
+    if (!resp.ok) throw new Error('http ' + resp.status);
+    const data = await resp.json();
+    if (data.status !== 'ok' || !data.items || !data.items.length) throw new Error('bad payload');
+    return data.items.slice(0, 6).map(it => {
+      // rss2json sometimes puts more text in content than in description
+      const desc = stripHtml(it.description);
+      const content = stripHtml(it.content);
+      return {
+        title: stripHtml(it.title),
+        body: content.length > desc.length ? content : desc,
+        link: it.link,
+        pubDate: it.pubDate,
+        tag: feed.tag,
+        feedName: feed.name
+      };
+    });
+  }
+
+  /* Pull all three feeds rather than one per day. Measured payloads differ a lot —
+     the Guardian gives ~500-600 characters per item while the BBC gives ~100 — so
+     rotating one feed per day would mean a one-sentence "deep read" on BBC days.
+     Merging gives ~18 items daily and lets the longest piece lead. */
+  async function fetchDailyNews() {
+    const settled = await Promise.all(NEWS_FEEDS.map(f =>
+      fetchOneFeed(f).catch(() => [])
+    ));
+    const all = settled.flat().filter(it => it.title && it.body);
+    if (!all.length) return null;
+
+    // Candidates substantial enough to actually study, longest first.
+    const meaty = all.slice().sort((a, b) => b.body.length - a.body.length);
+    const pool = meaty.slice(0, Math.min(6, meaty.length));
+    // Rotate which of them leads, so two visits on different days differ even if
+    // the headlines themselves haven't turned over yet.
+    const lead = pool[dayNumber() % pool.length];
+    const rest = all.filter(it => it !== lead).slice(0, 6);
+    const sources = [...new Set(all.map(it => it.tag))];
+    return { lead: lead, rest: rest, sources: sources, total: all.length };
+  }
+
+  function renderNewsCard(result) {
+    if (!result || !result.lead) return '';
+    const lead = result.lead;
+    const dateLine = lead.pubDate ? lead.pubDate.split(' ')[0] : '';
+    const speakText = (lead.title + '. ' + lead.body).replace(/"/g, '&quot;');
     return `
       <div class="fresh-card news">
-        <div class="fresh-source">📰 BBC WORLD NEWS · 今日头条</div>
-        <div class="fresh-title">Top 5 stories from BBC right now</div>
-        ${items.map(it => {
-          const desc = (it.description || '').replace(/<[^>]+>/g, '').substring(0, 200);
-          return `<div class="news-item">
-            <h5>${wrapForTranslate(it.title || '')}</h5>
-            <p>${wrapForTranslate(desc)}</p>
-            <a href="${it.link}" target="_blank">Read on BBC →</a>
-          </div>`;
-        }).join('')}
+        <div class="fresh-source">📰 今日新闻精读 · ${result.sources.join(' + ')}</div>
+        <div class="fresh-title">今天从 ${result.sources.length} 个媒体抓到 ${result.total} 条真实报道，精读段取正文最长的一条</div>
+
+        <div class="news-read-item">
+          <div class="news-read-title">${wrapForTranslate(lead.title)}</div>
+          <div class="news-read-body">${wrapForTranslate(lead.body)}</div>
+          <div class="news-read-meta">
+            ${dateLine ? dateLine + ' · ' : ''}${lead.feedName} · ${lead.body.length} 字符
+            &nbsp;·&nbsp;<a href="${lead.link}" target="_blank" rel="noopener">读原文 →</a>
+          </div>
+          <button class="speak-btn" onclick="speak(this.dataset.text)" data-text="${speakText}" style="margin-top:8px;">🔊 朗读精读段</button>
+        </div>
+
+        ${result.rest.length ? `<div style="margin-top:14px;font-size:12px;font-weight:700;color:var(--muted);">MORE HEADLINES · 其他头条</div>` : ''}
+        ${result.rest.map(it => `
+          <div class="news-item">
+            <h5>${wrapForTranslate(it.title)}</h5>
+            <p>${wrapForTranslate(it.body.substring(0, 240))}</p>
+            <a href="${it.link}" target="_blank" rel="noopener">Read on ${it.tag} →</a>
+          </div>
+        `).join('')}
       </div>
     `;
   }
@@ -5789,7 +6199,7 @@
     if (want.wiki || want.otd) tasks.push(['wiki', fetchWikipediaFeatured()]);
     if (want.nasa) tasks.push(['nasa', fetchNASAApod()]);
     if (want.quote) tasks.push(['quote', fetchQuote()]);
-    if (want.news) tasks.push(['news', fetchBBCNews()]);
+    if (want.news) tasks.push(['news', fetchDailyNews()]);
     if (want.weather) tasks.push(['weather', fetchWeather()]);
     if (want.currency) tasks.push(['currency', fetchCurrency()]);
 
@@ -5821,14 +6231,14 @@
 
     // Track which APIs failed (for the notice)
     const apiFailed = [];
-    if (want.news && !results.news) apiFailed.push('BBC News');
+    if (want.news && !results.news) apiFailed.push('今日新闻');
     if (want.wiki && !results.wiki) apiFailed.push('Wikipedia');
     if (want.nasa && !results.nasa) apiFailed.push('NASA');
     if (want.weather && !results.weather) apiFailed.push('Weather');
     if (want.currency && !results.currency) apiFailed.push('Currency');
 
     if (apiFailed.length && html) {
-      html += `<div class="fresh-error" style="margin-top:10px;font-size:12px;">⚠️ Could not reach: ${apiFailed.join(', ')} · CORS 或网络问题（部署到 Netlify/GitHub Pages 后通常正常）</div>`;
+      html += `<div class="fresh-error" style="margin-top:10px;font-size:12px;">⚠️ 暂时连不上：${apiFailed.join(', ')} · 网络波动，稍后点 🔄 Fetch All 重试即可（本地内容不受影响）</div>`;
     }
 
     if (!html) {
@@ -5839,7 +6249,10 @@
 
   /* ========== SRS (Spaced Repetition System) ========== */
   // Each card: { word, pos, def, zh, interval (days), ease (2.5 default), due (timestamp), reps, source }
-  let srsDeck = [];
+  let srsDeck = (() => {
+    const saved = storeGet('srsDeck', null);
+    return Array.isArray(saved) ? saved : [];
+  })();
 
   function nowMs() { return new Date().getTime(); }
   function daysToMs(d) { return d * 24 * 60 * 60 * 1000; }
@@ -6735,6 +7148,22 @@ ${text}
     injectSpeakButtons();  // Inject last so it catches all newly rendered content
     addBackButtons();
     initWritingStudio();
+
+    // Pull saved notebook text back into the textareas, then start autosaving.
+    restoreAll();
+    setInterval(saveAll, 3000);
+    window.addEventListener('beforeunload', saveAll);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') saveAll();
+    });
+    if (!HAS_STORE) {
+      const badge = document.getElementById('autoSaveBadge');
+      if (badge) {
+        badge.textContent = '⚠️ 此浏览器禁用了本地存储，进度不会自动保存，请用导出 JSON';
+        badge.style.opacity = '1';
+        badge.style.color = '#b45309';
+      }
+    }
 
     // Handle URL hash on load
     const hash = window.location.hash.slice(1);
