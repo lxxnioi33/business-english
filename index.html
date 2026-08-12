@@ -1713,7 +1713,7 @@
 
 <aside>
   <div class="brand">Business English</div>
-  <div class="brand-sub">Lyra's Journey · SPA v5.1</div>
+  <div class="brand-sub">Lyra's Journey · SPA v5.2</div>
   <nav>
     <a href="#home" onclick="event.preventDefault();showSection('home')" class="active" style="font-weight:700;">🏠 Home 首页</a>
     <div class="nav-section">Core Learning</div>
@@ -2725,8 +2725,8 @@
 
 <footer>
   Built for Lyra · Kaiyan Medical · 商务英语学习工作台<br>
-  <span style="color:var(--primary);font-weight:700;">Version 5.1 · Fresh Daily Edition</span> · 更新于 2026-08-11 · 每天 15-20 分钟，一年 100 小时纯练习<br>
-  <span style="font-size:11px;">内容每日不重复轮换 · 进度自动保存到本机浏览器</span>
+  <span style="color:var(--primary);font-weight:700;">Version 5.2 · Fresh Daily Edition</span> · 更新于 2026-08-11 · 每天 15-20 分钟，一年 100 小时纯练习<br>
+  <span style="font-size:11px;">内容每日不重复轮换 · 进度自动保存 · 点词即时翻译（605 词内置字典 + 联网兜底）</span>
 </footer>
 
 </main>
@@ -3359,7 +3359,59 @@
     'through': { zh: '通过', pos: 'prep.' }, 'between': { zh: '之间', pos: 'prep.' }, 'without': { zh: '没有', pos: 'prep.' }, 'within': { zh: '在...内', pos: 'prep.' },
     'across': { zh: '穿过', pos: 'prep.' }, 'during': { zh: '在...期间', pos: 'prep.' }, 'until': { zh: '直到', pos: 'prep.' }, 'since': { zh: '自从', pos: 'prep.' },
     'while': { zh: '当...时候', pos: 'conj.' }, 'because': { zh: '因为', pos: 'conj.' }, 'although': { zh: '尽管', pos: 'conj.' }, 'though': { zh: '尽管', pos: 'conj.' },
-    'whether': { zh: '是否', pos: 'conj.' }
+    'whether': { zh: '是否', pos: 'conj.' },
+
+    /* High-frequency function words. These were missing, so clicking one sent it to
+       the machine translator — which is both wasteful and unreliable for grammar
+       words: "who" came back as "WHO", the health organisation. Resolving them
+       locally is faster and correct. */
+    'who': { zh: '谁;（关系代词）', pos: 'pron.' }, 'whom': { zh: '谁（宾格）', pos: 'pron.' },
+    'whose': { zh: '谁的', pos: 'pron.' }, 'which': { zh: '哪一个;（关系代词）', pos: 'pron.' },
+    'what': { zh: '什么', pos: 'pron.' }, 'where': { zh: '在哪里', pos: 'adv.' },
+    'how': { zh: '如何;怎样', pos: 'adv.' },
+    'i': { zh: '我', pos: 'pron.' }, 'you': { zh: '你;你们', pos: 'pron.' },
+    'he': { zh: '他', pos: 'pron.' }, 'she': { zh: '她', pos: 'pron.' },
+    'it': { zh: '它', pos: 'pron.' }, 'we': { zh: '我们', pos: 'pron.' },
+    'they': { zh: '他们', pos: 'pron.' }, 'me': { zh: '我（宾格）', pos: 'pron.' },
+    'him': { zh: '他（宾格）', pos: 'pron.' }, 'her': { zh: '她的;她（宾格）', pos: 'pron.' },
+    'us': { zh: '我们（宾格）', pos: 'pron.' }, 'them': { zh: '他们（宾格）', pos: 'pron.' },
+    'my': { zh: '我的', pos: 'det.' }, 'your': { zh: '你的', pos: 'det.' },
+    'his': { zh: '他的', pos: 'det.' }, 'its': { zh: '它的', pos: 'det.' },
+    'our': { zh: '我们的', pos: 'det.' }, 'their': { zh: '他们的', pos: 'det.' },
+    'this': { zh: '这个', pos: 'det.' }, 'that': { zh: '那个;（引导从句）', pos: 'det.' },
+    'these': { zh: '这些', pos: 'det.' }, 'those': { zh: '那些', pos: 'det.' },
+    'a': { zh: '一个（不定冠词）', pos: 'art.' }, 'an': { zh: '一个（元音前）', pos: 'art.' },
+    'the': { zh: '这/那（定冠词）', pos: 'art.' },
+    'and': { zh: '和;并且', pos: 'conj.' }, 'or': { zh: '或者', pos: 'conj.' },
+    'but': { zh: '但是', pos: 'conj.' }, 'if': { zh: '如果', pos: 'conj.' },
+    'so': { zh: '所以;如此', pos: 'conj.' }, 'as': { zh: '作为;当…时;像', pos: 'conj.' },
+    'than': { zh: '比', pos: 'conj.' }, 'then': { zh: '然后;那时', pos: 'adv.' },
+    'not': { zh: '不', pos: 'adv.' }, 'no': { zh: '不;没有', pos: 'adv.' },
+    'yes': { zh: '是', pos: 'adv.' },
+    'in': { zh: '在…里', pos: 'prep.' }, 'on': { zh: '在…上', pos: 'prep.' },
+    'at': { zh: '在（某点）', pos: 'prep.' }, 'to': { zh: '到;向', pos: 'prep.' },
+    'of': { zh: '…的', pos: 'prep.' }, 'for': { zh: '为了;给', pos: 'prep.' },
+    'with': { zh: '和…一起;用', pos: 'prep.' }, 'from': { zh: '从', pos: 'prep.' },
+    'by': { zh: '由;通过;在…旁', pos: 'prep.' }, 'about': { zh: '关于;大约', pos: 'prep.' },
+    'into': { zh: '进入', pos: 'prep.' }, 'under': { zh: '在…下面', pos: 'prep.' },
+    'is': { zh: '是（第三人称单数）', pos: 'v.' }, 'are': { zh: '是（复数）', pos: 'v.' },
+    'was': { zh: '是（过去式）', pos: 'v.' }, 'were': { zh: '是（过去复数）', pos: 'v.' },
+    'be': { zh: '是;成为', pos: 'v.' }, 'been': { zh: '是（过去分词）', pos: 'v.' },
+    'being': { zh: '是（现在分词）', pos: 'v.' }, 'am': { zh: '是（我）', pos: 'v.' },
+    'do': { zh: '做;（助动词）', pos: 'v.' }, 'does': { zh: '做（第三人称单数）', pos: 'v.' },
+    'did': { zh: '做（过去式）', pos: 'v.' }, 'done': { zh: '完成（过去分词）', pos: 'v.' },
+    'have': { zh: '有;（完成时助动词）', pos: 'v.' }, 'has': { zh: '有（第三人称单数）', pos: 'v.' },
+    'had': { zh: '有（过去式）', pos: 'v.' },
+    'will': { zh: '将要', pos: 'aux.' }, 'would': { zh: '会（虚拟/礼貌）', pos: 'aux.' },
+    'can': { zh: '能;可以', pos: 'aux.' }, 'could': { zh: '能（过去/礼貌）', pos: 'aux.' },
+    'shall': { zh: '将;应当（合同用语）', pos: 'aux.' }, 'should': { zh: '应该', pos: 'aux.' },
+    'may': { zh: '可以;可能', pos: 'aux.' }, 'might': { zh: '可能（较弱）', pos: 'aux.' },
+    'must': { zh: '必须', pos: 'aux.' },
+    'any': { zh: '任何', pos: 'det.' }, 'most': { zh: '大多数;最', pos: 'det.' },
+    'few': { zh: '很少', pos: 'det.' }, 'less': { zh: '更少', pos: 'det.' },
+    'very': { zh: '非常', pos: 'adv.' }, 'just': { zh: '刚刚;只是', pos: 'adv.' },
+    'only': { zh: '只有;仅', pos: 'adv.' }, 'again': { zh: '再次', pos: 'adv.' },
+    'after': { zh: '在…之后', pos: 'prep.' }, 'before': { zh: '在…之前', pos: 'prep.' }
   };
 
   function lookupWord(word) {
@@ -5448,27 +5500,120 @@
     }
   }
 
+  /* ========== Live word translation ==========
+     The built-in bizDict holds a few hundred business terms, so anything outside
+     that list used to show "not in dictionary" plus a Google search link — which
+     is a dead end when Google isn't reachable, and it got worse once the news
+     deep-read started bringing in real-world vocabulary. Words are now looked up
+     live and shown inline, then cached so the personal dictionary grows with use.
+     Two independent providers, because relying on one is how the Quote card
+     quietly broke when quotable.io shut down. */
+  const DICT_CACHE_KEY = 'dictCache';
+  let dictCache = null;
+
+  function getDictCache() {
+    if (!dictCache) dictCache = storeGet(DICT_CACHE_KEY, {});
+    return dictCache;
+  }
+
+  function cacheTranslation(word, zh, via) {
+    const c = getDictCache();
+    c[word] = { zh: zh, via: via };
+    // Keep the cache from growing without bound; drop the oldest third when large.
+    const keys = Object.keys(c);
+    if (keys.length > 1500) keys.slice(0, 500).forEach(k => delete c[k]);
+    storeSet(DICT_CACHE_KEY, c);
+  }
+
+  async function translateViaLingva(word) {
+    const r = await fetch('https://lingva.ml/api/v1/en/zh/' + encodeURIComponent(word),
+                          { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('lingva ' + r.status);
+    const j = await r.json();
+    if (!j.translation) throw new Error('lingva empty');
+    return j.translation;
+  }
+
+  async function translateViaMyMemory(word) {
+    const r = await fetch('https://api.mymemory.translated.net/get?q=' +
+                          encodeURIComponent(word) + '&langpair=en|zh-CN',
+                          { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error('mymemory ' + r.status);
+    const j = await r.json();
+    const t = j.responseData && j.responseData.translatedText;
+    if (!t) throw new Error('mymemory empty');
+    return t;
+  }
+
+  async function liveTranslate(word) {
+    try { return { zh: await translateViaLingva(word), via: 'Lingva' }; } catch (e) {}
+    try { return { zh: await translateViaMyMemory(word), via: 'MyMemory' }; } catch (e) {}
+    return null;
+  }
+
+  function dictFallbackLinks(word) {
+    const q = encodeURIComponent(word);
+    // Youdao and Bing both load from mainland China, unlike the old Google link.
+    return `<div style="font-size:11px;color:#999;margin-top:6px;">
+      查词典：<a href="https://dict.youdao.com/w/${q}/" target="_blank" rel="noopener" style="color:#7dd3c0;">有道 →</a>
+      &nbsp;<a href="https://cn.bing.com/dict/search?q=${q}" target="_blank" rel="noopener" style="color:#7dd3c0;">必应 →</a>
+    </div>`;
+  }
+
+  let tooltipToken = 0;
+
+  function positionTooltip(tt, rect) {
+    tt.style.left = (rect.left + window.scrollX) + 'px';
+    tt.style.top = (rect.top + window.scrollY - tt.offsetHeight - 8) + 'px';
+    if (tt.getBoundingClientRect().left < 5) tt.style.left = '5px';
+  }
+
   function wordLookup(el) {
     const word = el.textContent.trim();
     if (!word) return;
-    const result = lookupWord(word);
     el.classList.add('looked-up');
-    // Show tooltip
     const tt = document.getElementById('translateTooltip');
     if (!tt) return;
     const rect = el.getBoundingClientRect();
-    if (result) {
-      tt.innerHTML = `<div class="word-en">${result.word}<span class="word-pos">${result.pos}</span></div><div class="word-zh">${result.zh}</div>`;
-    } else {
-      tt.innerHTML = `<div class="word-en">${word}</div><div class="word-zh" style="color:#f87171;">Not in dictionary · 字典未收录</div><div style="font-size:11px;color:#999;margin-top:4px;">Copy word: <a href="https://www.google.com/search?q=${encodeURIComponent(word + ' meaning')}" target="_blank" style="color:#7dd3c0;">Google it →</a></div>`;
+    const token = ++tooltipToken;
+
+    const show = (html) => {
+      // Ignore a late-arriving result if another word has since been clicked.
+      if (token !== tooltipToken) return;
+      tt.innerHTML = html;
+      tt.style.display = 'block';
+      tt.style.pointerEvents = 'auto';
+      positionTooltip(tt, rect);
+    };
+
+    const clean = word.toLowerCase().replace(/[.,!?;:'"()]/g, '');
+    const local = lookupWord(word);
+    if (local) {
+      show(`<div class="word-en">${local.word}<span class="word-pos">${local.pos}</span></div><div class="word-zh">${local.zh}</div>`);
+      return;
     }
-    tt.style.display = 'block';
-    tt.style.pointerEvents = 'auto';
-    tt.style.left = (rect.left + window.scrollX) + 'px';
-    tt.style.top = (rect.top + window.scrollY - tt.offsetHeight - 8) + 'px';
-    // Adjust if off-screen
-    if (tt.getBoundingClientRect().left < 5) tt.style.left = '5px';
-    // Hide on click elsewhere
+
+    const cached = getDictCache()[clean];
+    if (cached) {
+      show(`<div class="word-en">${clean}<span class="word-pos">已缓存</span></div><div class="word-zh">${cached.zh}</div>`);
+      return;
+    }
+
+    if (!clean || !/^[a-z][a-z'-]*$/.test(clean)) {
+      show(`<div class="word-en">${word}</div><div class="word-zh" style="color:#f87171;">不是可查的英文单词</div>`);
+      return;
+    }
+
+    show(`<div class="word-en">${clean}</div><div class="word-zh" style="color:#9ca3af;">查询中…</div>`);
+    liveTranslate(clean).then(res => {
+      if (res) {
+        cacheTranslation(clean, res.zh, res.via);
+        show(`<div class="word-en">${clean}<span class="word-pos">${res.via}</span></div><div class="word-zh">${res.zh}</div>`);
+      } else {
+        show(`<div class="word-en">${clean}</div><div class="word-zh" style="color:#f87171;">翻译服务暂时连不上</div>${dictFallbackLinks(clean)}`);
+      }
+    });
+
     setTimeout(() => {
       document.addEventListener('click', hideWordTooltip, { once: true });
     }, 100);
